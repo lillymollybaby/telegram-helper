@@ -1,0 +1,54 @@
+services:
+  - type: worker
+    name: tg-reminder-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DB_PATH
+        value: reminder.db
+      - key: DEFAULT_BUFFER_MIN
+        value: "15"
+      - key: DEFAULT_REMIND_BEFORE_MIN
+        value: "30"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: DGIS_API_KEY
+        sync: false
+      - key: ROUTING_PROVIDER
+        value: auto
+      - key: YANDEX_API_KEY
+        sync: false
+      - key: YANDEX_ROUTING_API_KEY
+        sync: false
+      - key: YANDEX_DISTANCE_MATRIX_API_KEY
+        sync: false
+      - key: TMDB_API_KEY
+        sync: false
+      - key: LETTERBOXD_POLL_SECONDS
+        value: "20"
+      - key: SCRIPT_DB_ROOT
+        value: ""
+      - key: AUTO_DELETE_TRIGGER_MESSAGES
+        value: "1"
+      - key: AUTO_DELETE_DELAY_SEC
+        value: "2"
+      - key: AUTO_DELETE_ALL_MESSAGES
+        value: "0"
+      - key: AUTO_DELETE_ALL_DELAY_SEC
+        value: "20"
+      - key: FOOD_DEFAULT_TIMEZONE
+        value: Asia/Bishkek
+      - key: FOOD_DINNER_HOUR
+        value: "19"
+      - key: FOOD_REMINDER_INTERVAL_SEC
+        value: "300"
+      - key: FOOD_CALORIE_TARGET_DEFAULT
+        value: "2000"
