@@ -48,6 +48,8 @@ python bot.py
 - `FOOD_DINNER_HOUR=19`
 - `FOOD_REMINDER_INTERVAL_SEC=300`
 - `FOOD_CALORIE_TARGET_DEFAULT=2000`
+- `GRAMMAR_A1A2_PDF` (путь к PDF-учебнику Grammar для A1/A2)
+- `GRAMMAR_B1B2_PDF` (путь к PDF-учебнику Grammar для B1/B2)
 
 ## Поведение
 - Кнопка `Планировщик`: задачи и напоминания.
@@ -60,3 +62,26 @@ python bot.py
   - `Добавить прием пищи`: текст или фото, оценка ккал/БЖУ, сохранение даты/времени.
   - `Итоги дня` и `История`: суммарные показатели и список приемов.
   - Авто-напоминание за час до ужина с учетом того, что уже съедено.
+
+## Grammar Data
+- Для `English + A1/A2 + Grammar` и `English + B1/B2 + Grammar` бот умеет брать темы прямо из PDF (оглавление) и отправлять фрагмент страницы по выбранной теме.
+- Укажите путь к книгам в `.env`: `GRAMMAR_A1A2_PDF=...`, `GRAMMAR_B1B2_PDF=...`.
+- Grammar-темы читаются из JSON:
+  - `app/language/grammar_data/en/a1.json ... c2.json`
+  - `app/language/grammar_data/fr/a1.json ... c2.json`
+  - `app/language/grammar_data/de/a1.json ... c2.json`
+- Формат темы:
+```json
+{
+  "topics": [
+    {
+      "title": "Present Simple",
+      "rule": "Use base verb for habits and facts.",
+      "examples": [
+        "I work every day.",
+        "She likes coffee."
+      ]
+    }
+  ]
+}
+```

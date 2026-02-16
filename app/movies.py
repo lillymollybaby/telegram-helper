@@ -761,6 +761,14 @@ async def process_letterboxd_for_user(
     if err:
         return 0, err, None
     newest = items[0]["guid"] if items else None
+    # Bootstrap guard: if cursor is empty, do not flood old history.
+    # Just set the cursor to the current head and wait for truly new entries.
+    if not last_guid:
+        if newest:
+            db.update_letterboxd_last_guid(user_id, newest)
+        if not silent_if_no_new:
+            return 0, None, "Синхронизировал текущие логи. Покажу только новые после привязки."
+        return 0, None, None
     new_items = []
     for i in items:
         if last_guid and i["guid"] == last_guid:
@@ -808,6 +816,13 @@ async def process_letterboxd_watchlist_for_user(
     if err:
         return 0, err, None
     newest = items[0]["guid"] if items else None
+    # Bootstrap guard: avoid sending whole wishlist history when cursor is empty.
+    if not last_guid:
+        if newest:
+            db.update_letterboxd_last_watchlist_guid(user_id, newest)
+        if not silent_if_no_new:
+            return 0, None, "Синхронизировал текущий wishlist. Покажу только новые после привязки."
+        return 0, None, None
     new_items = []
     for i in items:
         if last_guid and i["guid"] == last_guid:

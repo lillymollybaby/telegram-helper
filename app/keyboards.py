@@ -76,6 +76,20 @@ def language_level_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+def grammar_topics_keyboard(topics: list[str]) -> ReplyKeyboardMarkup:
+    rows = []
+    current: list[str] = []
+    for topic in topics:
+        current.append(topic)
+        if len(current) == 2:
+            rows.append(current)
+            current = []
+    if current:
+        rows.append(current)
+    rows.append([config.BTN_BACK_MOVIES, config.BTN_HOME_MENU])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
 def language_exam_keyboard(exam: str) -> ReplyKeyboardMarkup:
     if exam == config.BTN_EXAM_IELTS:
         rows = [[config.BTN_EXAM_IELTS_LISTEN, config.BTN_EXAM_IELTS_WRITE], [config.BTN_EXAM_IELTS_READ]]

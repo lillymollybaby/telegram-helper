@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import base64
 import json
@@ -25,17 +25,28 @@ STATE_WAIT_REMINDER = "food_wait_reminder"
 
 
 FOOD_HINTS = {
-    "Ð³Ñ€ÐµÑ‡Ðº": {"calories": 180, "protein": 6, "fat": 2, "carbs": 36, "fiber": 5},
-    "Ð¿ÑŽÑ€Ðµ": {"calories": 150, "protein": 3, "fat": 5, "carbs": 24, "fiber": 2},
-    "ÐºÐ¾Ñ‚Ð»ÐµÑ‚": {"calories": 260, "protein": 16, "fat": 18, "carbs": 8, "fiber": 1},
-    "Ñ€Ð¸Ñ": {"calories": 200, "protein": 4, "fat": 1, "carbs": 44, "fiber": 1},
-    "ÐºÑƒÑ€Ð¸Ñ†": {"calories": 220, "protein": 30, "fat": 10, "carbs": 0, "fiber": 0},
-    "Ñ€Ñ‹Ð±": {"calories": 210, "protein": 26, "fat": 11, "carbs": 0, "fiber": 0},
-    "ÑÐ°Ð»Ð°Ñ‚": {"calories": 120, "protein": 4, "fat": 7, "carbs": 10, "fiber": 4},
-    "Ñ…Ð»ÐµÐ±": {"calories": 90, "protein": 3, "fat": 1, "carbs": 17, "fiber": 1},
-    "ÑÐ¹Ñ†": {"calories": 80, "protein": 7, "fat": 6, "carbs": 1, "fiber": 0},
-    "ÑÑƒÐ¿": {"calories": 180, "protein": 8, "fat": 7, "carbs": 22, "fiber": 3},
+    "гречк": {"calories": 180, "protein": 6, "fat": 2, "carbs": 36, "fiber": 5},
+    "пюре": {"calories": 150, "protein": 3, "fat": 5, "carbs": 24, "fiber": 2},
+    "котлет": {"calories": 260, "protein": 16, "fat": 18, "carbs": 8, "fiber": 1},
+    "рис": {"calories": 200, "protein": 4, "fat": 1, "carbs": 44, "fiber": 1},
+    "куриц": {"calories": 220, "protein": 30, "fat": 10, "carbs": 0, "fiber": 0},
+    "рыб": {"calories": 210, "protein": 26, "fat": 11, "carbs": 0, "fiber": 0},
+    "салат": {"calories": 120, "protein": 4, "fat": 7, "carbs": 10, "fiber": 4},
+    "хлеб": {"calories": 90, "protein": 3, "fat": 1, "carbs": 17, "fiber": 1},
+    "яйц": {"calories": 80, "protein": 7, "fat": 6, "carbs": 1, "fiber": 0},
+    "суп": {"calories": 180, "protein": 8, "fat": 7, "carbs": 22, "fiber": 3},
 }
+
+
+def _normalize_advice_text(v: str) -> str:
+    s = (v or "").strip()
+    if not s:
+        return ""
+    has_latin = bool(re.search(r"[A-Za-z]", s))
+    has_cyrillic = bool(re.search(r"[А-Яа-яЁё]", s))
+    if has_latin and not has_cyrillic:
+        return "Старайтесь соблюдать баланс: меньше сахара, больше белка и овощей."
+    return s
 
 
 def _clear_food_states(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -77,14 +88,14 @@ def _fallback_analyze_text(text: str) -> dict:
         items = [{"name": "meal", "calories": 450, "protein": 18, "fat": 16, "carbs": 52, "fiber": 4}]
     totals = _sum_items(items)
     return {
-        "meal_name": text or "ÐŸÑ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸",
+        "meal_name": text or "Прием пищи",
         "items": items,
         "calories_kcal": round(totals["calories"], 1),
         "protein_g": round(totals["protein"], 1),
         "fat_g": round(totals["fat"], 1),
         "carbs_g": round(totals["carbs"], 1),
         "fiber_g": round(totals["fiber"], 1),
-        "advice": ["Ð”Ð¾Ð±Ð°Ð²ÑŒÑ‚Ðµ Ð¾Ð²Ð¾Ñ‰Ð¸ Ð¸Ð»Ð¸ Ð·ÐµÐ»ÐµÐ½ÑŒ Ð´Ð»Ñ ÐºÐ»ÐµÑ‚Ñ‡Ð°Ñ‚ÐºÐ¸.", "ÐŸÐµÐ¹Ñ‚Ðµ Ð²Ð¾Ð´Ñƒ Ð¿Ð¾ÑÐ»Ðµ ÐµÐ´Ñ‹."],
+        "advice": ["Добавьте овощи или зелень для клетчатки.", "Пейте воду после еды."],
         "confidence": 0.55,
     }
 
@@ -122,27 +133,29 @@ async def _gemini_meal_json(prompt: str, image_bytes: bytes | None = None) -> di
 
 
 def _normalized_analysis(obj: dict, fallback_name: str) -> dict:
+    advice_raw = [str(x) for x in (obj.get("advice") or [])][:3] if isinstance(obj.get("advice"), list) else []
+    advice = [x for x in (_normalize_advice_text(v) for v in advice_raw) if x]
     return {
-        "meal_name": str(obj.get("meal_name") or fallback_name or "ÐŸÑ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸"),
+        "meal_name": str(obj.get("meal_name") or fallback_name or "Прием пищи"),
         "items": obj.get("items") if isinstance(obj.get("items"), list) else [],
         "calories_kcal": float(obj.get("calories_kcal") or 0),
         "protein_g": float(obj.get("protein_g") or 0),
         "fat_g": float(obj.get("fat_g") or 0),
         "carbs_g": float(obj.get("carbs_g") or 0),
         "fiber_g": float(obj.get("fiber_g") or 0),
-        "advice": [str(x) for x in (obj.get("advice") or [])][:3] if isinstance(obj.get("advice"), list) else [],
+        "advice": advice,
         "confidence": float(obj.get("confidence") or 0.0),
     }
 
 
 async def analyze_meal_text(text: str) -> dict:
     prompt = (
-        "Ð¢Ñ‹ Ð´Ð¸ÐµÑ‚-Ð°ÑÑÐ¸ÑÑ‚ÐµÐ½Ñ‚. Ð’ÐµÑ€Ð½Ð¸ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ JSON:\n"
+        "Ты диет-ассистент. Верни только JSON. Все поля и советы пиши только по-русски:\n"
         "{\"meal_name\":\"...\",\"items\":[{\"name\":\"...\",\"portion_g\":0,\"calories\":0,\"protein\":0,\"fat\":0,\"carbs\":0,\"fiber\":0}],"
         "\"calories_kcal\":0,\"protein_g\":0,\"fat_g\":0,\"carbs_g\":0,\"fiber_g\":0,"
         "\"advice\":[\"...\",\"...\"],\"confidence\":0.0}\n"
-        f"ÐžÑ†ÐµÐ½Ð¸ Ð¿Ñ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸: {text}\n"
-        "Ð•ÑÐ»Ð¸ Ð´Ð°Ð½Ð½Ñ‹Ñ… Ð¼Ð°Ð»Ð¾, Ð´Ð°Ð¹ Ñ€Ð°Ð·ÑƒÐ¼Ð½ÑƒÑŽ Ð¾Ñ†ÐµÐ½ÐºÑƒ."
+        f"Оцени прием пищи: {text}\n"
+        "Если данных мало, дай разумную оценку."
     )
     obj = await _gemini_meal_json(prompt)
     if obj:
@@ -154,36 +167,36 @@ async def analyze_meal_text(text: str) -> dict:
 
 async def analyze_meal_photo(caption: str, image_bytes: bytes) -> dict:
     prompt = (
-        "Ð¢Ñ‹ Ð´Ð¸ÐµÑ‚-Ð°ÑÑÐ¸ÑÑ‚ÐµÐ½Ñ‚. ÐŸÑ€Ð¾Ð°Ð½Ð°Ð»Ð¸Ð·Ð¸Ñ€ÑƒÐ¹ Ñ„Ð¾Ñ‚Ð¾ ÐµÐ´Ñ‹ Ð¸ Ð¿Ð¾Ð´Ð¿Ð¸ÑÑŒ. Ð’ÐµÑ€Ð½Ð¸ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ JSON:\n"
+        "Ты диет-ассистент. Проанализируй фото еды и подпись. Верни только JSON. Все поля и советы пиши только по-русски:\n"
         "{\"meal_name\":\"...\",\"items\":[{\"name\":\"...\",\"portion_g\":0,\"calories\":0,\"protein\":0,\"fat\":0,\"carbs\":0,\"fiber\":0}],"
         "\"calories_kcal\":0,\"protein_g\":0,\"fat_g\":0,\"carbs_g\":0,\"fiber_g\":0,"
         "\"advice\":[\"...\",\"...\"],\"confidence\":0.0}\n"
-        f"ÐŸÐ¾Ð´Ð¿Ð¸ÑÑŒ: {caption or 'Ð±ÐµÐ· Ð¿Ð¾Ð´Ð¿Ð¸ÑÐ¸'}"
+        f"Подпись: {caption or 'без подписи'}"
     )
     obj = await _gemini_meal_json(prompt, image_bytes=image_bytes)
     if obj:
-        norm = _normalized_analysis(obj, caption or "ÐŸÑ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸")
+        norm = _normalized_analysis(obj, caption or "Прием пищи")
         if norm.get("calories_kcal", 0) > 0:
             return norm
-    return _fallback_analyze_text(caption or "ÐµÐ´Ð° Ð¿Ð¾ Ñ„Ð¾Ñ‚Ð¾")
+    return _fallback_analyze_text(caption or "еда по фото")
 
 
 def _format_meal_saved_text(analysis: dict, meal_time: datetime) -> str:
     advice = analysis.get("advice") or []
     lines = [
-        f"Ð—Ð°Ð¿Ð¸ÑÐ°Ð» Ð¿Ñ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸: {analysis.get('meal_name', 'ÐŸÑ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸')}",
-        f"Ð”Ð°Ñ‚Ð°/Ð²Ñ€ÐµÐ¼Ñ: {meal_time.strftime('%d.%m.%Y %H:%M')}",
+        f"Записал прием пищи: {analysis.get('meal_name', 'Прием пищи')}",
+        f"Дата/время: {meal_time.strftime('%d.%m.%Y %H:%M')}",
         (
-            "ÐžÑ†ÐµÐ½ÐºÐ°: "
-            f"{analysis.get('calories_kcal', 0):.0f} ÐºÐºÐ°Ð» | "
-            f"Ð‘ {analysis.get('protein_g', 0):.1f} Ð³ | "
-            f"Ð– {analysis.get('fat_g', 0):.1f} Ð³ | "
-            f"Ð£ {analysis.get('carbs_g', 0):.1f} Ð³"
+            "Оценка: "
+            f"{analysis.get('calories_kcal', 0):.0f} ккал | "
+            f"Б {analysis.get('protein_g', 0):.1f} г | "
+            f"Ж {analysis.get('fat_g', 0):.1f} г | "
+            f"У {analysis.get('carbs_g', 0):.1f} г"
         ),
-        "ÐŸÑ€Ð¸ÑÑ‚Ð½Ð¾Ð³Ð¾ Ð°Ð¿Ð¿ÐµÑ‚Ð¸Ñ‚Ð°!",
+        "Приятного аппетита!",
     ]
     if advice:
-        lines.append(f"Ð¡Ð¾Ð²ÐµÑ‚: {advice[0]}")
+        lines.append(f"Совет: {advice[0]}")
     return "\n".join(lines)
 
 
@@ -199,9 +212,9 @@ def _today_in_user_tz(profile: dict) -> tuple[datetime, str]:
 
 def _daily_target_calories(profile: dict) -> int:
     goal = (profile.get("goal") or "").lower()
-    if "Ð¿Ð¾Ñ…ÑƒÐ´" in goal or "Ð´ÐµÑ„Ð¸Ñ†Ð¸Ñ‚" in goal:
+    if "похуд" in goal or "дефицит" in goal:
         return 1700
-    if "Ð½Ð°Ð±Ð¾Ñ€" in goal or "Ð¼Ð°Ñ" in goal:
+    if "набор" in goal or "мас" in goal:
         return 2400
     return config.FOOD_CALORIE_TARGET_DEFAULT
 
@@ -212,20 +225,20 @@ def _simple_dinner_suggestion(totals: dict, profile: dict) -> str:
     protein = float(totals.get("protein", 0) or 0)
     tips = []
     if remaining < 300:
-        tips.append("ÑƒÐ¶Ð¸Ð½ ÑÐ´ÐµÐ»Ð°Ñ‚ÑŒ Ð»ÐµÐ³ÐºÐ¸Ð¼: Ð¾Ð²Ð¾Ñ‰Ð¸ + Ð½ÐµÐ¶Ð¸Ñ€Ð½Ñ‹Ð¹ Ð±ÐµÐ»Ð¾Ðº")
+        tips.append("ужин сделать легким: овощи + нежирный белок")
     else:
-        tips.append("Ð´Ð¾Ð±Ð°Ð²ÑŒÑ‚Ðµ Ð±ÐµÐ»Ð¾Ðº (Ñ€Ñ‹Ð±Ð°/ÐºÑƒÑ€Ð¸Ñ†Ð°/Ñ‚Ð²Ð¾Ñ€Ð¾Ð³) Ð¸ Ð¾Ð²Ð¾Ñ‰Ð¸")
+        tips.append("добавьте белок (рыба/курица/творог) и овощи")
     if protein < 70:
-        tips.append("Ð´Ð¾Ð±ÐµÑ€Ð¸Ñ‚Ðµ Ð±ÐµÐ»Ð¾Ðº")
-    tips.append("ÑÐ²ÐµÐ´Ð¸Ñ‚Ðµ Ð±Ñ‹ÑÑ‚Ñ€Ñ‹Ðµ ÑƒÐ³Ð»ÐµÐ²Ð¾Ð´Ñ‹ Ðº Ð¼Ð¸Ð½Ð¸Ð¼ÑƒÐ¼Ñƒ Ð²ÐµÑ‡ÐµÑ€Ð¾Ð¼")
-    return f"Ð§ÐµÑ€ÐµÐ· Ñ‡Ð°Ñ ÑƒÐ¶Ð¸Ð½. Ð¡ÐµÐ³Ð¾Ð´Ð½Ñ Ñƒ Ð²Ð°Ñ {totals.get('calories', 0):.0f} ÐºÐºÐ°Ð». ÐœÐ¾Ð¶Ð½Ð¾ Ð´Ð¾Ð±Ñ€Ð°Ñ‚ÑŒ ~{remaining} ÐºÐºÐ°Ð»: " + "; ".join(tips[:2]) + "."
+        tips.append("доберите белок")
+    tips.append("сведите быстрые углеводы к минимуму вечером")
+    return f"Через час ужин. Сегодня у вас {totals.get('calories', 0):.0f} ккал. Можно добрать ~{remaining} ккал: " + "; ".join(tips[:2]) + "."
 
 
 async def start_add_meal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _clear_food_states(context)
     context.user_data[STATE_WAIT_MEAL] = True
     await update.effective_message.reply_text(
-        "ÐžÑ‚Ð¿Ñ€Ð°Ð²ÑŒÑ‚Ðµ Ñ„Ð¾Ñ‚Ð¾ ÐµÐ´Ñ‹ Ð¸Ð»Ð¸ Ð½Ð°Ð¿Ð¸ÑˆÐ¸Ñ‚Ðµ, Ñ‡Ñ‚Ð¾ ÑÑŠÐµÐ»Ð¸. ÐŸÑ€Ð¸Ð¼ÐµÑ€: Ð³Ñ€ÐµÑ‡ÐºÐ° Ñ Ð¿ÑŽÑ€Ðµ Ð¸ ÐºÐ¾Ñ‚Ð»ÐµÑ‚Ð¾Ð¹.",
+        "Отправьте фото еды или напишите, что съели. Пример: гречка с пюре и котлетой.",
         reply_markup=food_diary_keyboard(),
     )
 
@@ -237,15 +250,15 @@ async def show_day_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     meals = db.list_food_meals_for_date(user_id, date_iso)
     totals = db.get_food_daily_totals(user_id, date_iso)
     if not meals:
-        await update.effective_message.reply_text("Ð¡ÐµÐ³Ð¾Ð´Ð½Ñ ÐµÑ‰Ðµ Ð½ÐµÑ‚ Ð·Ð°Ð¿Ð¸ÑÐµÐ¹ Ð¾ ÐµÐ´Ðµ.", reply_markup=food_diary_keyboard())
+        await update.effective_message.reply_text("Сегодня еще нет записей о еде.", reply_markup=food_diary_keyboard())
         return
-    lines = [f"Ð˜Ñ‚Ð¾Ð³Ð¸ Ð·Ð° {now.strftime('%d.%m.%Y')}:"]
+    lines = [f"Итоги за {now.strftime('%d.%m.%Y')}:"]
     for m in meals[-8:]:
         t = datetime.fromisoformat(m["meal_time"]).strftime("%H:%M")
-        lines.append(f"- {t}: {m['meal_text'] or 'ÐŸÑ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸'} ({(m['calories'] or 0):.0f} ÐºÐºÐ°Ð»)")
+        lines.append(f"- {t}: {m['meal_text'] or 'Прием пищи'} ({(m['calories'] or 0):.0f} ккал)")
     lines.append("")
     lines.append(
-        f"Ð’ÑÐµÐ³Ð¾: {totals['calories']:.0f} ÐºÐºÐ°Ð» | Ð‘ {totals['protein']:.1f} Ð³ | Ð– {totals['fat']:.1f} Ð³ | Ð£ {totals['carbs']:.1f} Ð³"
+        f"Всего: {totals['calories']:.0f} ккал | Б {totals['protein']:.1f} г | Ж {totals['fat']:.1f} г | У {totals['carbs']:.1f} г"
     )
     await update.effective_message.reply_text("\n".join(lines), reply_markup=food_diary_keyboard())
 
@@ -253,12 +266,12 @@ async def show_day_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     rows = db.list_food_meals(update.effective_user.id, limit=12)
     if not rows:
-        await update.effective_message.reply_text("Ð˜ÑÑ‚Ð¾Ñ€Ð¸Ñ Ð¿ÑƒÑÑ‚Ð°.", reply_markup=food_diary_keyboard())
+        await update.effective_message.reply_text("История пуста.", reply_markup=food_diary_keyboard())
         return
-    lines = ["Ð˜ÑÑ‚Ð¾Ñ€Ð¸Ñ Ð¿Ñ€Ð¸ÐµÐ¼Ð¾Ð² Ð¿Ð¸Ñ‰Ð¸:"]
+    lines = ["История приемов пищи:"]
     for r in rows:
         dt = datetime.fromisoformat(r["meal_time"]).strftime("%d.%m %H:%M")
-        lines.append(f"- {dt}: {r['meal_text'] or 'ÐŸÑ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸'} ({(r['calories'] or 0):.0f} ÐºÐºÐ°Ð»)")
+        lines.append(f"- {dt}: {r['meal_text'] or 'Прием пищи'} ({(r['calories'] or 0):.0f} ккал)")
     await update.effective_message.reply_text("\n".join(lines), reply_markup=food_diary_keyboard())
 
 
@@ -269,7 +282,7 @@ async def suggest_dinner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     totals = db.get_food_daily_totals(user_id, date_iso)
     if int(totals.get("meals_count", 0)) == 0:
         await update.effective_message.reply_text(
-            "ÐŸÐ¾ÐºÐ° Ð½ÐµÑ‚ Ð·Ð°Ð¿Ð¸ÑÐµÐ¹ Ð·Ð° ÑÐµÐ³Ð¾Ð´Ð½Ñ. Ð¡Ð½Ð°Ñ‡Ð°Ð»Ð° Ð´Ð¾Ð±Ð°Ð²ÑŒÑ‚Ðµ Ð¿Ñ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸.",
+            "Пока нет записей за сегодня. Сначала добавьте прием пищи.",
             reply_markup=food_coach_keyboard(),
         )
         return
@@ -280,7 +293,7 @@ async def start_composition_analysis(update: Update, context: ContextTypes.DEFAU
     _clear_food_states(context)
     context.user_data[STATE_WAIT_COMPOSITION] = True
     await update.effective_message.reply_text(
-        "ÐÐ°Ð¿Ð¸ÑˆÐ¸Ñ‚Ðµ ÑÐ¾ÑÑ‚Ð°Ð²/ÑÑ‚Ð¸ÐºÐµÑ‚ÐºÑƒ Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð°, Ñ Ñ€Ð°Ð·Ð±ÐµÑ€Ñƒ Ð¿Ð»ÑŽÑÑ‹ Ð¸ Ñ€Ð¸ÑÐºÐ¸.",
+        "Напишите состав/этикетку продукта, я разберу плюсы и риски.",
         reply_markup=food_coach_keyboard(),
     )
 
@@ -288,14 +301,14 @@ async def start_composition_analysis(update: Update, context: ContextTypes.DEFAU
 async def start_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _clear_food_states(context)
     context.user_data[STATE_WAIT_AI] = True
-    await update.effective_message.reply_text("Ð—Ð°Ð´Ð°Ð¹Ñ‚Ðµ Ð²Ð¾Ð¿Ñ€Ð¾Ñ Ð¿Ð¾ Ð¿Ð¸Ñ‚Ð°Ð½Ð¸ÑŽ.", reply_markup=food_coach_keyboard())
+    await update.effective_message.reply_text("Задайте вопрос по питанию.", reply_markup=food_coach_keyboard())
 
 
 async def start_goal_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _clear_food_states(context)
     context.user_data[STATE_WAIT_GOAL] = True
     await update.effective_message.reply_text(
-        "ÐÐ°Ð¿Ð¸ÑˆÐ¸Ñ‚Ðµ Ñ†ÐµÐ»ÑŒ: Ð½Ð°Ð¿Ñ€Ð¸Ð¼ÐµÑ€, Ð¿Ð¾Ñ…ÑƒÐ´ÐµÐ½Ð¸Ðµ / Ð¿Ð¾Ð´Ð´ÐµÑ€Ð¶Ð°Ð½Ð¸Ðµ / Ð½Ð°Ð±Ð¾Ñ€ Ð¼Ð°ÑÑÑ‹.",
+        "Напишите цель: например, похудение / поддержание / набор массы.",
         reply_markup=food_profile_keyboard(),
     )
 
@@ -304,7 +317,7 @@ async def start_params_update(update: Update, context: ContextTypes.DEFAULT_TYPE
     _clear_food_states(context)
     context.user_data[STATE_WAIT_PARAMS] = True
     await update.effective_message.reply_text(
-        "ÐÐ°Ð¿Ð¸ÑˆÐ¸Ñ‚Ðµ Ð¿Ð°Ñ€Ð°Ð¼ÐµÑ‚Ñ€Ñ‹ Ð² Ð¾Ð´Ð½Ð¾Ð¹ ÑÑ‚Ñ€Ð¾ÐºÐµ. ÐŸÑ€Ð¸Ð¼ÐµÑ€: Ð²ÐµÑ 74, Ñ€Ð¾ÑÑ‚ 178, Ð²Ð¾Ð·Ñ€Ð°ÑÑ‚ 25, Ð¿Ð¾Ð» Ð¼.",
+        "Напишите параметры в одной строке. Пример: вес 74, рост 178, возраст 25, пол м.",
         reply_markup=food_profile_keyboard(),
     )
 
@@ -314,7 +327,7 @@ async def start_reminder_update(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data[STATE_WAIT_REMINDER] = True
     profile = dict(db.get_food_profile(update.effective_user.id))
     await update.effective_message.reply_text(
-        f"Ð¢ÐµÐºÑƒÑ‰Ð¸Ð¹ ÑƒÐ¶Ð¸Ð½: {profile.get('dinner_hour', config.FOOD_DINNER_HOUR)}:00. Ð’Ð²ÐµÐ´Ð¸Ñ‚Ðµ Ð½Ð¾Ð²Ñ‹Ð¹ Ñ‡Ð°Ñ (0-23).",
+        f"Текущий ужин: {profile.get('dinner_hour', config.FOOD_DINNER_HOUR)}:00. Введите новый час (0-23).",
         reply_markup=food_profile_keyboard(),
     )
 
@@ -347,37 +360,37 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if context.user_data.get(STATE_WAIT_COMPOSITION):
         _clear_food_states(context)
         prompt = (
-            "Ð Ð°Ð·Ð±ÐµÑ€Ð¸ ÑÐ¾ÑÑ‚Ð°Ð² Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð° Ð¸ Ð¾Ñ‚Ð²ÐµÑ‚ÑŒ ÐºÑ€Ð°Ñ‚ÐºÐ¾ Ð¿Ð¾-Ñ€ÑƒÑÑÐºÐ¸: Ñ‡Ñ‚Ð¾ Ð¾Ðº, Ñ‡Ñ‚Ð¾ ÑÐ¿Ð¾Ñ€Ð½Ð¾, ÐºÐ°Ðº Ñ‡Ð°ÑÑ‚Ð¾ ÐµÑÑ‚ÑŒ.\n"
-            f"Ð¡Ð¾ÑÑ‚Ð°Ð²: {raw_text}"
+            "Разбери состав продукта и ответь кратко по-русски: что ок, что спорно, как часто есть.\n"
+            f"Состав: {raw_text}"
         )
         obj = await _gemini_meal_json(prompt)
-        txt = "Ð Ð°Ð·Ð±Ð¾Ñ€ ÑÐ¾ÑÑ‚Ð°Ð²Ð°: " + (json.dumps(obj, ensure_ascii=False) if obj else "ÑÐ¾ÑÑ‚Ð°Ð² Ð²Ñ‹Ð³Ð»ÑÐ´Ð¸Ñ‚ Ð¿Ñ€Ð¸ÐµÐ¼Ð»ÐµÐ¼Ð¾, Ð½Ð¾ ÐºÐ¾Ð½Ñ‚Ñ€Ð¾Ð»Ð¸Ñ€ÑƒÐ¹Ñ‚Ðµ ÑÐ°Ñ…Ð°Ñ€/ÑÐ¾Ð»ÑŒ.")
+        txt = "Разбор состава: " + (json.dumps(obj, ensure_ascii=False) if obj else "состав выглядит приемлемо, но контролируйте сахар/соль.")
         await update.effective_message.reply_text(txt, reply_markup=food_coach_keyboard())
         return True
 
     if context.user_data.get(STATE_WAIT_AI):
         _clear_food_states(context)
-        prompt = f"ÐžÑ‚Ð²ÐµÑ‚ÑŒ ÐºÐ°Ðº Ð½ÑƒÑ‚Ñ€Ð¸Ñ†Ð¸Ð¾Ð»Ð¾Ð³ ÐºÑ€Ð°Ñ‚ÐºÐ¾ Ð¸ Ð¿Ð¾ Ð´ÐµÐ»Ñƒ Ð½Ð° Ð²Ð¾Ð¿Ñ€Ð¾Ñ: {raw_text}"
+        prompt = f"Ответь как нутрициолог кратко и по делу на вопрос: {raw_text}"
         obj = await _gemini_meal_json(prompt)
         if obj and obj.get("answer"):
             text = str(obj.get("answer"))
         else:
-            text = "Ð ÐµÐºÐ¾Ð¼ÐµÐ½Ð´ÑƒÑŽ Ð´ÐµÑ€Ð¶Ð°Ñ‚ÑŒ Ð±Ð°Ð»Ð°Ð½Ñ: Ð±ÐµÐ»Ð¾Ðº + Ð¾Ð²Ð¾Ñ‰Ð¸ + ÑÐ»Ð¾Ð¶Ð½Ñ‹Ðµ ÑƒÐ³Ð»ÐµÐ²Ð¾Ð´Ñ‹, Ð¸ ÐºÐ¾Ð½Ñ‚Ñ€Ð¾Ð»Ð¸Ñ€Ð¾Ð²Ð°Ñ‚ÑŒ Ð¾Ð±Ñ‰Ð¸Ð¹ ÐºÐ°Ð»Ð¾Ñ€Ð°Ð¶."
+            text = "Рекомендую держать баланс: белок + овощи + сложные углеводы, и контролировать общий калораж."
         await update.effective_message.reply_text(text, reply_markup=food_coach_keyboard())
         return True
 
     if context.user_data.get(STATE_WAIT_GOAL):
         _clear_food_states(context)
         db.update_food_goal(user_id, raw_text)
-        await update.effective_message.reply_text("Ð¦ÐµÐ»ÑŒ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð°.", reply_markup=food_profile_keyboard())
+        await update.effective_message.reply_text("Цель сохранена.", reply_markup=food_profile_keyboard())
         return True
 
     if context.user_data.get(STATE_WAIT_PARAMS):
         _clear_food_states(context)
         params = {"raw": raw_text}
-        m_weight = re.search(r"(Ð²ÐµÑ|weight)\D*(\d{2,3})", raw_text, flags=re.IGNORECASE)
-        m_height = re.search(r"(Ñ€Ð¾ÑÑ‚|height)\D*(\d{2,3})", raw_text, flags=re.IGNORECASE)
-        m_age = re.search(r"(Ð²Ð¾Ð·Ñ€Ð°ÑÑ‚|age)\D*(\d{1,2})", raw_text, flags=re.IGNORECASE)
+        m_weight = re.search(r"(вес|weight)\D*(\d{2,3})", raw_text, flags=re.IGNORECASE)
+        m_height = re.search(r"(рост|height)\D*(\d{2,3})", raw_text, flags=re.IGNORECASE)
+        m_age = re.search(r"(возраст|age)\D*(\d{1,2})", raw_text, flags=re.IGNORECASE)
         if m_weight:
             params["weight_kg"] = int(m_weight.group(2))
         if m_height:
@@ -385,18 +398,18 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if m_age:
             params["age"] = int(m_age.group(2))
         db.update_food_params(user_id, params)
-        await update.effective_message.reply_text("ÐŸÐ°Ñ€Ð°Ð¼ÐµÑ‚Ñ€Ñ‹ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ñ‹.", reply_markup=food_profile_keyboard())
+        await update.effective_message.reply_text("Параметры сохранены.", reply_markup=food_profile_keyboard())
         return True
 
     if context.user_data.get(STATE_WAIT_REMINDER):
         hour_match = re.search(r"\b([01]?\d|2[0-3])\b", raw_text)
         if not hour_match:
-            await update.effective_message.reply_text("Ð’Ð²ÐµÐ´Ð¸Ñ‚Ðµ Ñ‡Ð°Ñ Ð¾Ñ‚ 0 Ð´Ð¾ 23.", reply_markup=food_profile_keyboard())
+            await update.effective_message.reply_text("Введите час от 0 до 23.", reply_markup=food_profile_keyboard())
             return True
         hour = int(hour_match.group(1))
         _clear_food_states(context)
         db.update_food_reminder(user_id, dinner_hour=hour)
-        await update.effective_message.reply_text(f"ÐÐ°Ð¿Ð¾Ð¼Ð¸Ð½Ð°Ð½Ð¸Ðµ Ð½Ð° ÑƒÐ¶Ð¸Ð½ Ð¾Ð±Ð½Ð¾Ð²Ð»ÐµÐ½Ð¾: {hour:02d}:00.", reply_markup=food_profile_keyboard())
+        await update.effective_message.reply_text(f"Напоминание на ужин обновлено: {hour:02d}:00.", reply_markup=food_profile_keyboard())
         return True
 
     return False
@@ -416,7 +429,7 @@ async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     meal_time = datetime.now()
     db.save_food_meal(
         user_id=update.effective_user.id,
-        meal_text=caption or analysis.get("meal_name") or "ÐŸÑ€Ð¸ÐµÐ¼ Ð¿Ð¸Ñ‰Ð¸ (Ð¿Ð¾ Ñ„Ð¾Ñ‚Ð¾)",
+        meal_text=caption or analysis.get("meal_name") or "Прием пищи (по фото)",
         meal_time=meal_time,
         calories=analysis.get("calories_kcal"),
         protein=analysis.get("protein_g"),

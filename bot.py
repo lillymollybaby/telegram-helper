@@ -5,7 +5,7 @@ import logging
 from telegram import Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
-from app import cleanup, config, db, food, movies, planner, profile
+from app import cleanup, config, db, food, language, movies, planner, profile
 from app.keyboards import (
     food_coach_keyboard,
     food_diary_keyboard,
@@ -72,7 +72,7 @@ async def handle_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if text == config.BTN_BACK_MOVIES:
         await cleanup.cleanup_trigger_message(update, context)
         planner.cancel_draft(context)
-        if screen in {"lang_level", "lang_exam"}:
+        if screen in {"lang_level", "lang_exam", "lang_grammar_topics"}:
             _set_screen(context, "lang_language")
             await _send_nav_message(update, context, "Language Learning", language_menu_keyboard())
         elif screen in {"food_diary", "food_coach", "food_profile"}:
@@ -102,18 +102,27 @@ async def handle_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if text in {config.BTN_LEVEL_A, config.BTN_LEVEL_B, config.BTN_LEVEL_C}:
         await cleanup.cleanup_trigger_message(update, context)
         context.user_data["lang_level"] = text
+        context.user_data.pop("grammar_topics", None)
+        context.user_data.pop("grammar_pdf_path", None)
         _set_screen(context, "lang_level")
         await _send_nav_message(update, context, text, language_level_keyboard())
         return True
 
+    if await language.handle_grammar_topic_click(update, context, text):
+        await cleanup.cleanup_trigger_message(update, context)
+        return True
+
     if text in {config.BTN_SKILL_VOCAB, config.BTN_SKILL_GRAMMAR}:
         await cleanup.cleanup_trigger_message(update, context)
-        lang = context.user_data.get("lang_selected", "Language")
-        level = context.user_data.get("lang_level", "")
-        await update.effective_message.reply_text(
-            f"{lang} / {level} / {text}\nSection is ready for content.",
-            reply_markup=language_level_keyboard(),
-        )
+        if text == config.BTN_SKILL_GRAMMAR:
+            await language.start_grammar(update, context)
+        else:
+            lang = context.user_data.get("lang_selected", "Language")
+            level = context.user_data.get("lang_level", "")
+            await update.effective_message.reply_text(
+                f"{lang} / {level} / {text}\nSection is ready for content.",
+                reply_markup=language_level_keyboard(),
+            )
         return True
 
     if text in {config.BTN_EXAM_IELTS, config.BTN_EXAM_DELF, config.BTN_EXAM_GOETHE}:
