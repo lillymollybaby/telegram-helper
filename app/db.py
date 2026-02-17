@@ -2,11 +2,14 @@
 
 import sqlite3
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
 from app import config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -593,7 +596,8 @@ def get_subtitle_cache(title_key: str, year: Optional[int]) -> Optional[list[str
         data = json.loads(row["lines_json"])
         if isinstance(data, list):
             return [str(x) for x in data if str(x).strip()]
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to parse subtitle cache title_key=%s year=%s: %s", title_key, year, e)
         return None
     return None
 

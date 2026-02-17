@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _norm(s: str) -> str:
@@ -53,7 +56,8 @@ def _best_dialogue_file_from_meta(root: Path, film_title: str) -> Optional[Path]
             continue
         try:
             data = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore"))
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to read script metadata %s: %s", meta_path, e)
             continue
         if not isinstance(data, dict):
             continue
@@ -172,7 +176,8 @@ def load_dialogues_for_film(film_title: str, script_db_root: str, max_lines: int
 
     try:
         txt = f.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to read script file %s: %s", f, e)
         return []
 
     if _is_parsed_dialogue_file(f):

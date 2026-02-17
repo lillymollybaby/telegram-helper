@@ -19,8 +19,8 @@ async def _delete_message_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
-        logger.debug("Failed to delete message %s in chat %s", message_id, chat_id)
+    except Exception as e:
+        logger.debug("Failed to delete message %s in chat %s: %s", message_id, chat_id, e)
 
 
 def _schedule_delete(application: Application, chat_id: int, message_id: int, delay_sec: int) -> None:
@@ -36,6 +36,8 @@ def _schedule_delete(application: Application, chat_id: int, message_id: int, de
 
 
 def schedule_bot_message_cleanup(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay_sec: int | None = None) -> None:
+    if not config.AUTO_DELETE_ALL_MESSAGES:
+        return
     delay = config.AUTO_DELETE_ALL_DELAY_SEC if delay_sec is None else max(0, int(delay_sec))
     _schedule_delete(context.application, chat_id, message_id, delay)
 
@@ -69,5 +71,5 @@ async def cleanup_trigger_message(update: Update, context: ContextTypes.DEFAULT_
         return
     try:
         await msg.delete()
-    except Exception:
-        logger.debug("Failed to delete trigger message %s in chat %s", msg.message_id, msg.chat_id)
+    except Exception as e:
+        logger.debug("Failed to delete trigger message %s in chat %s: %s", msg.message_id, msg.chat_id, e)

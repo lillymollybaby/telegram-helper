@@ -150,8 +150,8 @@ async def _load_cefr_b1_c1_words() -> set[str]:
             cached = json.loads(_CEFR_CACHE.read_text(encoding="utf-8"))
             if isinstance(cached, list):
                 return {str(x).strip().lower() for x in cached if str(x).strip()}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to read CEFR cache %s: %s", _CEFR_CACHE, e)
 
     words: dict[str, str] = {}
     timeout = httpx.Timeout(15)
@@ -165,7 +165,8 @@ async def _load_cefr_b1_c1_words() -> set[str]:
                 if parsed:
                     words.update(parsed)
                     break
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed to load CEFR source %s: %s", url, e)
                 continue
         if not words:
             try:
@@ -185,8 +186,8 @@ async def _load_cefr_b1_c1_words() -> set[str]:
                         if parsed:
                             words.update(parsed)
                             break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed CEFR GitHub API fallback: %s", e)
 
     out = {w for w, lvl in words.items() if lvl in _CEFR_LEVELS}
     if out:
@@ -321,7 +322,8 @@ async def _translate_words(words: list[dict]) -> list[dict]:
     def _tr(w: str) -> str:
         try:
             return translator.translate(w) or ""
-        except Exception:
+        except Exception as e:
+            logger.debug("Word translation failed for '%s': %s", w, e)
             return ""
 
     out: list[dict] = []
