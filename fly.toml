@@ -1,0 +1,8 @@
+app = "telegram-helper"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[mounts]
+  source = "telegram_data"
+  destination = "/app/data"

@@ -14,7 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
-from app import cleanup, config, db
+from app import cleanup, config, db, word_extractor
 from app.keyboards import main_menu_keyboard, movies_menu_keyboard
 from app.services.script_dialogues import detect_script_db_ready, load_dialogues_for_film
 
@@ -666,6 +666,10 @@ def english_word_card_text(row: dict, reveal: bool = False) -> str:
 
 
 async def generate_english_words_for_film(film_title: str) -> list[dict]:
+    subtitle_words = await word_extractor.extract_words_from_movie_subtitles(film_title=film_title, year=None, limit=12)
+    if subtitle_words:
+        return subtitle_words
+
     dialogues = load_dialogues_for_film(film_title, config.SCRIPT_DB_ROOT, max_lines=120)
     fallback_words = _extract_fallback_words_from_dialogues(film_title, dialogues, need=12)
     if not config.GEMINI_API_KEY:
@@ -997,6 +1001,17 @@ async def movie_action_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.message.reply_text(build_movie_facts_text(film_title, details), parse_mode=ParseMode.HTML, reply_markup=movie_back_keyboard(entry_id))
         return
     if action == "en":
+        release_date = (details or {}).get("release_date") if isinstance(details, dict) else None
+        year = None
+        if isinstance(release_date, str) and len(release_date) >= 4 and release_date[:4].isdigit():
+            year = int(release_date[:4])
+
+        words = await word_extractor.extract_words_from_movie_subtitles(film_title=film_title, year=year, limit=15)
+        if words:
+            text = word_extractor.format_words_for_telegram(film_title, year, words)
+            await query.message.reply_text(text, reply_markup=movie_back_keyboard(entry_id), disable_web_page_preview=True)
+            return
+
         lesson = await build_movie_learning_suggestion(film_title)
         await query.message.reply_text(build_english_text(film_title, lesson), parse_mode=ParseMode.HTML, reply_markup=movie_back_keyboard(entry_id))
         return

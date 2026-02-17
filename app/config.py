@@ -22,6 +22,7 @@ YANDEX_ROUTING_API_KEY = os.getenv("YANDEX_ROUTING_API_KEY", "").strip()
 YANDEX_DISTANCE_MATRIX_API_KEY = os.getenv("YANDEX_DISTANCE_MATRIX_API_KEY", "").strip()
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY", "").strip()
+OPENSUBTITLES_API_KEY = os.getenv("OPENSUBTITLES_API_KEY", "").strip()
 LETTERBOXD_POLL_SECONDS = int(os.getenv("LETTERBOXD_POLL_SECONDS", "20"))
 SCRIPT_DB_ROOT = os.getenv("SCRIPT_DB_ROOT", "").strip()
 AUTO_DELETE_TRIGGER_MESSAGES = os.getenv("AUTO_DELETE_TRIGGER_MESSAGES", "1").strip().lower() in ("1", "true", "yes", "on")

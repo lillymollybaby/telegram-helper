@@ -106,6 +106,20 @@ def init_db() -> None:
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS subtitle_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title_key TEXT NOT NULL,
+            year INTEGER,
+            lines_json TEXT NOT NULL,
+            source TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(title_key, year)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS food_profiles (
             user_id INTEGER PRIMARY KEY,
             params_json TEXT,
@@ -547,13 +561,60 @@ def update_english_word_review(word_id: int, user_id: int, result: str) -> None:
 
     conn = db_connect()
     cur = conn.cursor()
-    cur.execute(
+    cur.execute( 
         """
         UPDATE english_words
         SET interval_hours = ?, success_count = ?, fail_count = ?, last_result = ?, next_review_at = ?, updated_at = ?
         WHERE id = ? AND user_id = ?
         """,
         (interval, success, fail, result, next_dt.isoformat(), now.isoformat(), word_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_subtitle_cache(title_key: str, year: Optional[int]) -> Optional[list[str]]:
+    conn = db_connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT lines_json
+        FROM subtitle_cache
+        WHERE title_key = ? AND year IS ?
+        LIMIT 1
+        """,
+        (title_key, year),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    try:
+        data = json.loads(row["lines_json"])
+        if isinstance(data, list):
+            return [str(x) for x in data if str(x).strip()]
+    except Exception:
+        return None
+    return None
+
+
+def save_subtitle_cache(title_key: str, year: Optional[int], lines: list[str], source: Optional[str] = None) -> None:
+    if not lines:
+        return
+    now_iso = datetime.now().isoformat()
+    payload = json.dumps(lines, ensure_ascii=False)
+    conn = db_connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO subtitle_cache (title_key, year, lines_json, source, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(title_key, year) DO UPDATE SET
+            lines_json = excluded.lines_json,
+            source = COALESCE(excluded.source, subtitle_cache.source),
+            updated_at = excluded.updated_at
+        """,
+        (title_key, year, payload, source, now_iso, now_iso),
     )
     conn.commit()
     conn.close()
