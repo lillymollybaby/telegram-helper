@@ -198,6 +198,7 @@ async def _load_cefr_b1_c1_words() -> set[str]:
 
 async def _search_subtitle_file_id(title: str, year: Optional[int]) -> Optional[int]:
     if not config.OPENSUBTITLES_API_KEY:
+        logger.warning("OpenSubtitles: API key not configured")
         return None
     headers = {
         "Api-Key": config.OPENSUBTITLES_API_KEY,
@@ -213,10 +214,10 @@ async def _search_subtitle_file_id(title: str, year: Optional[int]) -> Optional[
     }
     if year:
         params["year"] = str(year)
-    async with httpx.AsyncClient(timeout=20) as client:
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
         r = await client.get(f"{OPENSUBTITLES_BASE}/subtitles", headers=headers, params=params)
         if r.status_code >= 400:
-            logger.warning("OpenSubtitles search failed: status=%s body=%s", r.status_code, r.text[:240])
+            logger.warning("OpenSubtitles search failed: title=%s status=%s body=%s", title, r.status_code, r.text[:240])
             return None
         data = r.json()
     for item in data.get("data", []):
@@ -227,7 +228,9 @@ async def _search_subtitle_file_id(title: str, year: Optional[int]) -> Optional[
                 continue
             file_id = f.get("file_id")
             if isinstance(file_id, int):
+                logger.info("OpenSubtitles: Found file_id=%s for title=%s", file_id, title)
                 return file_id
+    logger.warning("OpenSubtitles: No subtitles found for title=%s", title)
     return None
 
 
@@ -241,17 +244,21 @@ async def _download_srt_by_file_id(file_id: int) -> Optional[str]:
         "Accept": "application/json",
     }
     payload = {"file_id": file_id, "sub_format": "srt"}
-    async with httpx.AsyncClient(timeout=25) as client:
+    async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
         r = await client.post(f"{OPENSUBTITLES_BASE}/download", headers=headers, json=payload)
         if r.status_code >= 400:
-            logger.warning("OpenSubtitles download link failed: status=%s body=%s", r.status_code, r.text[:240])
+            logger.warning("OpenSubtitles download link failed: file_id=%s status=%s body=%s", file_id, r.status_code, r.text[:240])
             return None
         link = (r.json() or {}).get("link")
         if not link:
+            logger.warning("OpenSubtitles: No download link in response for file_id=%s", file_id)
             return None
+        logger.debug("OpenSubtitles: Got download link for file_id=%s, downloading...", file_id)
         rr = await client.get(link)
         if rr.status_code >= 400:
+            logger.warning("OpenSubtitles: Failed to fetch subtitle file from link, status=%s", rr.status_code)
             return None
+        logger.info("OpenSubtitles: Successfully downloaded subtitle, size=%s bytes", len(rr.content))
     return _decode_subtitle_content(rr.content)
 
 
@@ -346,22 +353,30 @@ async def extract_words_from_movie_subtitles(film_title: str, year: Optional[int
         await _ensure_nltk_data()
         cache_key = _title_key(film_title)
         lines = db.get_subtitle_cache(cache_key, year)
-        if not lines:
+        if lines:
+            logger.info("Using cached subtitles for film=%s year=%s lines_count=%s", film_title, year, len(lines))
+        else:
+            logger.info("Cache miss for film=%s year=%s, fetching from OpenSubtitles...", film_title, year)
             file_id = await _search_subtitle_file_id(film_title, year)
             if not file_id:
+                logger.warning("Could not find subtitle file_id for film=%s", film_title)
                 return []
             srt_text = await _download_srt_by_file_id(file_id)
             if not srt_text:
+                logger.warning("Failed to download subtitle for film=%s file_id=%s", film_title, file_id)
                 return []
             lines = _clean_srt_text(srt_text)
+            logger.info("Extracted %s lines from subtitle for film=%s", len(lines), film_title)
             db.save_subtitle_cache(cache_key, year, lines, source="opensubtitles")
 
         cefr_words = await _load_cefr_b1_c1_words()
         candidates = await asyncio.to_thread(_pick_candidates, lines, cefr_words, limit)
+        logger.debug("Picked %s word candidates for film=%s", len(candidates), film_title)
         translated = await _translate_words(candidates[:limit])
+        logger.info("Successfully extracted %s translated words for film=%s", len(translated), film_title)
         return translated[:limit]
     except Exception as e:
-        logger.warning("Subtitle word extraction failed for %s: %s", film_title, e)
+        logger.warning("Subtitle word extraction failed for film=%s: %s", film_title, e, exc_info=True)
         return []
 
 
