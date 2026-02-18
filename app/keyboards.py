@@ -15,16 +15,38 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
 def movies_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [config.BTN_MOVIES_BIND, config.BTN_MOVIES_UNBIND],
-            [config.BTN_MOVIES_CHECK, config.BTN_MOVIES_CHECK_WISHLIST],
-            [config.BTN_MOVIES_CREW],
-            [config.BTN_MOVIES_ENGLISH],
-            [config.BTN_MOVIES_IMDB_LINK, config.BTN_MOVIES_IMDB_UNLINK],
-            [config.BTN_MOVIES_IMDB_MOVIES],
+            ["Letterboxd", "IMDB"],
             [config.BTN_BACK_MOVIES, config.BTN_HOME_MENU],
         ],
         resize_keyboard=True,
     )
+
+
+def letterboxd_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Меню для действий с Letterboxd."""
+    return ReplyKeyboardMarkup(
+        [
+            [config.BTN_MOVIES_BIND, config.BTN_MOVIES_UNBIND],
+            [config.BTN_MOVIES_CHECK, config.BTN_MOVIES_CHECK_WISHLIST],
+            [config.BTN_MOVIES_STATUS],
+            [config.BTN_MOVIES_ENGLISH],
+            ["Back", config.BTN_HOME_MENU],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def imdb_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Меню для действий с IMDB."""
+    return ReplyKeyboardMarkup(
+        [
+            [config.BTN_MOVIES_IMDB_LINK, config.BTN_MOVIES_IMDB_UNLINK],
+            [config.BTN_MOVIES_IMDB_MOVIES],
+            ["Back", config.BTN_HOME_MENU],
+        ],
+        resize_keyboard=True,
+    )
+
 
 
 def planning_menu_keyboard() -> ReplyKeyboardMarkup:

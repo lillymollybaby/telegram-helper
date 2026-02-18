@@ -27,6 +27,27 @@ def movie_back_keyboard(entry_id: int) -> InlineKeyboardMarkup:
     )
 
 
+def words_keyboard(entry_id: int, page: int = 0, total_pages: int = 1) -> InlineKeyboardMarkup:
+    """Keyboard for word list navigation."""
+    buttons = []
+    
+    # Navigation buttons if multiple pages
+    if total_pages > 1:
+        prev_page = page - 1 if page > 0 else total_pages - 1
+        next_page = (page + 1) % total_pages
+        buttons.append([
+            InlineKeyboardButton("⬅️ Назад", callback_data=f"mv:words:{entry_id}:{prev_page}"),
+            InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data=f"mv:words:{entry_id}:{page}"),
+            InlineKeyboardButton("Вперед ➡️", callback_data=f"mv:words:{entry_id}:{next_page}"),
+        ])
+    
+    # Back buttons
+    buttons.append([InlineKeyboardButton("Назад к фильму", callback_data=f"mv:menu:{entry_id}")])
+    buttons.append([InlineKeyboardButton("🏠 Главное меню", callback_data=f"mv:home:{entry_id}")])
+    
+    return InlineKeyboardMarkup(buttons)
+
+
 def people_carousel_keyboard(entry_id: int, idx: int, total: int) -> InlineKeyboardMarkup:
     if total <= 1:
         return movie_back_keyboard(entry_id)

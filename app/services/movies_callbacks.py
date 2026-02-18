@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
 from html import escape
 from typing import Awaitable, Callable
@@ -11,6 +13,8 @@ from telegram.ext import ContextTypes
 from app import db, word_extractor
 from app.keyboards import main_menu_keyboard, movies_menu_keyboard
 from app.services import movies_content, movies_ui, tmdb
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -25,19 +29,44 @@ async def movie_action_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
     await query.answer()
     parts = (query.data or "").split(":")
-    if len(parts) != 3 or parts[0] != "mv":
+    if len(parts) < 3 or parts[0] != "mv":
         return
-    action, entry_id_s = parts[1], parts[2]
-    try:
-        entry_id = int(entry_id_s)
-    except ValueError:
+    
+    # Default values
+    page = 0
+    details = None
+    
+    # Handle both 3-part (mv:action:entry_id) and 4-part (mv:words:entry_id:page) formats
+    if len(parts) == 4 and parts[1] == "words":
+        # Handle word navigation
+        action = "words"
+        try:
+            entry_id = int(parts[2])
+            page = int(parts[3])
+        except ValueError:
+            logger.warning("Invalid words callback format: %s", query.data)
+            return
+    elif len(parts) == 3:
+        action, entry_id_s = parts[1], parts[2]
+        try:
+            entry_id = int(entry_id_s)
+        except ValueError:
+            logger.warning("Invalid callback format: %s", query.data)
+            return
+    else:
+        logger.warning("Unknown callback format: %s", query.data)
         return
+    
     entry = db.get_letterboxd_entry(entry_id, query.from_user.id)
     if not entry:
+        logger.warning("No entry found for entry_id=%s user_id=%s", entry_id, query.from_user.id)
         return
     film_title = entry["film_title"]
-    movie = await tmdb.search_movie(film_title)
-    details = await tmdb.movie_details(int(movie["id"])) if movie and movie.get("id") else None
+    
+    # Get movie details (not always needed)
+    if action != "words":
+        movie = await tmdb.search_movie(film_title)
+        details = await tmdb.movie_details(int(movie["id"])) if movie and movie.get("id") else None
 
     if action == "menu":
         txt = f"Вижу, вы посмотрели <b>{escape(film_title)}</b> 👀\nХочешь разбор по фильму? Выбери кнопку ниже."
@@ -54,28 +83,88 @@ async def movie_action_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
     if action == "en":
-        release_date = (details or {}).get("release_date") if isinstance(details, dict) else None
-        year = None
-        if isinstance(release_date, str) and len(release_date) >= 4 and release_date[:4].isdigit():
-            year = int(release_date[:4])
+        try:
+            release_date = (details or {}).get("release_date") if isinstance(details, dict) else None
+            year = None
+            if isinstance(release_date, str) and len(release_date) >= 4 and release_date[:4].isdigit():
+                year = int(release_date[:4])
 
-        words = await word_extractor.extract_words_from_movie_subtitles(film_title=film_title, year=year, limit=15)
-        if words:
-            text = word_extractor.format_words_for_telegram(film_title, year, words)
+            words = await word_extractor.extract_words_from_movie_subtitles(film_title=film_title, year=year, limit=40)
+            if words:
+                # Save words to context for pagination
+                context.user_data[f"words_{entry_id}"] = words
+                context.user_data[f"film_year_{entry_id}"] = year
+                
+                text = word_extractor.format_words_for_telegram(film_title, year, words, page=0, per_page=5)
+                if text:  # Check that formatted text is not empty
+                    total_pages = (len(words) + 4) // 5  # Calculate total pages (5 words per page)
+                    keyboard = movies_ui.words_keyboard(entry_id, page=0, total_pages=total_pages)
+                    await query.message.reply_text(
+                        text,
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=keyboard,
+                        disable_web_page_preview=True,
+                    )
+                    return
+                else:
+                    logger.warning("Words found but formatted text is empty for film=%s", film_title)
+
+            lesson = await actions.build_movie_learning_suggestion(film_title)
             await query.message.reply_text(
-                text,
+                movies_ui.build_english_text(film_title, lesson),
+                parse_mode=ParseMode.HTML,
                 reply_markup=movies_ui.movie_back_keyboard(entry_id),
-                disable_web_page_preview=True,
             )
             return
-
-        lesson = await actions.build_movie_learning_suggestion(film_title)
-        await query.message.reply_text(
-            movies_ui.build_english_text(film_title, lesson),
-            parse_mode=ParseMode.HTML,
-            reply_markup=movies_ui.movie_back_keyboard(entry_id),
-        )
-        return
+        except Exception as e:
+            logger.exception("Error handling English button for film=%s: %s", film_title, e)
+            try:
+                await query.message.reply_text(
+                    "Ошибка при обработке запроса. Попробуй позже.",
+                    reply_markup=movies_ui.movie_back_keyboard(entry_id),
+                )
+            except Exception as send_err:
+                logger.exception("Failed to send error message: %s", send_err)
+            return
+    if action == "words":
+        try:
+            # Get cached words from context
+            words_key = f"words_{entry_id}"
+            year_key = f"film_year_{entry_id}"
+            
+            words = context.user_data.get(words_key, [])
+            year = context.user_data.get(year_key)
+            
+            if not words:
+                logger.warning("No words found in context for word navigation: entry_id=%s", entry_id)
+                await query.message.reply_text(
+                    "Слова больше не в памяти. Нажми English заново.",
+                    reply_markup=movies_ui.movie_back_keyboard(entry_id),
+                )
+                return
+            
+            # Format words for current page
+            text = word_extractor.format_words_for_telegram(film_title, year, words, page=page, per_page=5)
+            if text:
+                total_pages = (len(words) + 4) // 5
+                keyboard = movies_ui.words_keyboard(entry_id, page=page, total_pages=total_pages)
+                try:
+                    await query.message.edit_text(
+                        text,
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=keyboard,
+                    )
+                except Exception as edit_err:
+                    logger.debug("Could not edit message, sending new one: %s", edit_err)
+                    await query.message.reply_text(
+                        text,
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=keyboard,
+                    )
+            return
+        except Exception as e:
+            logger.exception("Error handling words pagination for entry_id=%s page=%s: %s", entry_id, page, e)
+            return
     if action == "people":
         _, people = movies_content.build_people_data(film_title, details)
         if not people:

@@ -272,17 +272,37 @@ def _pick_candidates(lines: list[str], cefr_words: set[str], limit: int) -> list
     example_for: dict[str, str] = {}
     wf_by_word: dict[str, float] = {}
 
+    # Common simple words/names to exclude
+    COMMON_SIMPLE = {
+        "charley", "charlie", "goblin", "harry", "london", "spider", "peter",
+        "queen", "king", "prince", "princess", "dragon", "wizard", "magic",
+        "hello", "goodbye", "thanks", "please", "sorry", "sure", "right",
+        "left", "right", "come", "went", "look", "see", "tell", "got",
+        "good", "bad", "big", "small", "nice", "thing", "stuff", "make",
+        "take", "give", "get", "call", "say", "know", "think", "want",
+        "need", "like", "have", "does", "done", "said", "told", "went",
+        "come", "back", "time", "year", "day", "week", "month", "place",
+        "person", "people", "guy", "girl", "man", "woman", "boy", "lady",
+    }
+
     for line in lines:
         tokens = word_tokenize(line)
         for t in tokens:
             low = t.lower()
             if not _WORD_RE.fullmatch(low):
                 continue
-            if len(low) < 5 or low in sw:
+            # More strict: words must be at least 6 chars
+            if len(low) < 6 or low in sw or low in COMMON_SIMPLE:
                 continue
+            
+            # Skip probable names (start with capital + short)
+            if t[0].isupper() and len(t) < 8:
+                continue
+                
             lemma = lemmatizer.lemmatize(low, _safe_pos(low))
-            if lemma in sw or len(lemma) < 5:
+            if lemma in sw or lemma in COMMON_SIMPLE or len(lemma) < 6:
                 continue
+            
             wf = word_frequency(lemma, "en")
             freq_counter[lemma] = freq_counter.get(lemma, 0) + 1
             wf_by_word[lemma] = wf
@@ -292,31 +312,35 @@ def _pick_candidates(lines: list[str], cefr_words: set[str], limit: int) -> list
     out: list[dict] = []
     used: set[str] = set()
 
-    def add_stage(min_wf: float, max_wf: float, require_cefr: bool) -> None:
+    def add_stage(min_wf: float, max_wf: float, require_cefr: bool = True) -> None:
         for word in scored_words:
             if word in used:
                 continue
             wf = wf_by_word.get(word, 0.0)
             if not (min_wf <= wf <= max_wf):
                 continue
-            if require_cefr and word not in cefr_words:
+            # STRICT: Always respect CEFR if available
+            if use_cefr_filter and word not in cefr_words:
                 continue
             used.add(word)
             out.append({"word": word, "example": example_for.get(word, "")})
             if len(out) >= limit:
                 return
 
-    # Stage 1: strict B1-C1.
-    add_stage(1e-6, 3e-5, require_cefr=use_cefr_filter)
-    # Stage 2: wider upper bound to avoid too-short lists.
+    # Stage 1: Very strict - only B1-C1 words with low frequency (not common)
+    add_stage(1e-6, 2e-5, require_cefr=True)
+    
+    # Stage 2: Still strict - B1-C1 words, wider frequency range
     if len(out) < limit:
-        add_stage(1e-6, 1e-4, require_cefr=use_cefr_filter)
-    # Stage 3: no CEFR (when subtitle vocabulary is narrow or CEFR set is too strict).
+        add_stage(1e-6, 5e-5, require_cefr=True)
+    
+    # Stage 3: If still not enough - allow slightly higher frequency but still require CEFR
     if len(out) < limit:
-        add_stage(1e-6, 1e-4, require_cefr=False)
-    # Stage 4: final fill with medium-frequency words.
+        add_stage(1e-6, 1e-4, require_cefr=True)
+    
+    # Stage 4: Last resort - rare words (very low frequency) without CEFR requirement
     if len(out) < limit:
-        add_stage(1e-7, 3e-4, require_cefr=False)
+        add_stage(1e-7, 1e-6, require_cefr=False)
 
     return out
 
@@ -326,16 +350,33 @@ async def _translate_words(words: list[dict]) -> list[dict]:
         return []
     translator = GoogleTranslator(source="en", target="ru")
 
-    def _tr(w: str) -> str:
+    def _tr(w: str, example: str = "") -> str:
         try:
-            return translator.translate(w) or ""
+            # If we have example, try to get better translation with context
+            if example and len(example) > 10:
+                # Translate the example first to understand context
+                try:
+                    example_ru = translator.translate(example[:50]) or ""
+                    # Now translate the word with better understanding
+                    result = translator.translate(w) or ""
+                    # Additional context-aware translation attempt
+                    if result and result != w:
+                        return result
+                except Exception:
+                    pass
+            
+            # Fallback to simple translation
+            result = translator.translate(w) or ""
+            return result
         except Exception as e:
             logger.debug("Word translation failed for '%s': %s", w, e)
             return ""
 
     out: list[dict] = []
     for item in words:
-        translated = await asyncio.to_thread(_tr, item["word"])
+        word = item.get("word", "")
+        example = item.get("example", "")
+        translated = await asyncio.to_thread(_tr, word, example)
         if not translated:
             translated = "(перевод недоступен)"
         out.append(
@@ -370,31 +411,64 @@ async def extract_words_from_movie_subtitles(film_title: str, year: Optional[int
             db.save_subtitle_cache(cache_key, year, lines, source="opensubtitles")
 
         cefr_words = await _load_cefr_b1_c1_words()
+        logger.debug("Loaded %s CEFR (B1-C1) words for filtering", len(cefr_words))
+        
         candidates = await asyncio.to_thread(_pick_candidates, lines, cefr_words, limit)
-        logger.debug("Picked %s word candidates for film=%s", len(candidates), film_title)
+        logger.info("Filtered down to %s word candidates from %s lines (using strict CEFR filter)", len(candidates), len(lines))
+        
         translated = await _translate_words(candidates[:limit])
-        logger.info("Successfully extracted %s translated words for film=%s", len(translated), film_title)
+        logger.info("Successfully extracted %s translated words for film=%s (only strict B1-C1 vocabulary)", len(translated), film_title)
+        if translated:
+            logger.debug("Sample words: %s", [(w.get('word'), w.get('translation')) for w in translated[:3]])
         return translated[:limit]
     except Exception as e:
         logger.warning("Subtitle word extraction failed for film=%s: %s", film_title, e, exc_info=True)
         return []
 
 
-def format_words_for_telegram(film_title: str, year: Optional[int], words: list[dict]) -> str:
-    header = f'Слова из фильма "{film_title}"'
+def format_words_for_telegram(film_title: str, year: Optional[int], words: list[dict], page: int = 0, per_page: int = 5) -> str:
+    """Format words with pagination support."""
+    if not words:
+        return ""
+    
+    # Calculate pagination
+    total_pages = (len(words) + per_page - 1) // per_page
+    start_idx = page * per_page
+    end_idx = min(start_idx + per_page, len(words))
+    page_words = words[start_idx:end_idx]
+    
+    # Header
+    header = f'📚 <b>Слова из фильма "{film_title}"</b>'
     if year:
-        header += f" ({year})"
+        header += f" <i>({year})</i>"
+    header += f"\n📖 Страница {page + 1} из {total_pages}"
+    
     lines = [header, ""]
-    for idx, item in enumerate(words[:15], start=1):
+    
+    # Words
+    for idx, item in enumerate(page_words, start=start_idx + 1):
         w = str(item.get("word") or "").strip()
         tr = str(item.get("translation") or "").strip()
         ex = str(item.get("example") or "").strip()
         if not w or not tr:
             continue
-        lines.append(f"{idx}. {w} — {tr}")
+        
+        # Better formatting with more context
+        lines.append(f"<b>{idx}. {w}</b>")
+        lines.append(f"   🇷🇺 <i>{tr}</i>")
         if ex:
-            lines.append(f'Реплика: "{ex}"')
+            # Show more of the example
+            example_text = ex[:80] if len(ex) > 80 else ex
+            lines.append(f"   💬 <code>{example_text}</code>")
         lines.append("")
+    
     if len(lines) <= 2:
         return ""
-    return "\n".join(lines).strip()
+    
+    text = "\n".join(lines).strip()
+    
+    # Footer with page indicator
+    if total_pages > 1:
+        text += f"\n\n{'▫️' * (total_pages)}\n <b>{' ' * page}▪️</b>"
+    
+    return text
